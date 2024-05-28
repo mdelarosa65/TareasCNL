@@ -1,0 +1,274 @@
+### A Pluto.jl notebook ###
+# v0.19.42
+
+using Markdown
+using InteractiveUtils
+
+# ╔═╡ cdd5068c-741c-4bfb-9426-ff512118160b
+begin
+    import Pkg
+	  Pkg.activate(@__DIR__)
+	using Plots, PlutoUI
+end
+
+# ╔═╡ 254b4bc9-946f-4461-b061-2535f1a56cb5
+#using DifferentialEquations
+using OrdinaryDiffEq
+
+# ╔═╡ d78bbe09-2d88-4643-b6ff-bd71cd561a0f
+using LinearAlgebra
+
+# ╔═╡ 455e0c30-d4d7-11ea-22ce-0d04b4e8d860
+md"## Ejercicio 3:
+
+Ecuaciones de Volterra‐Lotka para ecosistemas
+
+$$\dot{x}= \alpha x - \beta xy$$
+$$\dot{y}= \delta xy - \gamma y$$
+Con:
+
+$$\alpha, \beta, \gamma, \delta >0$$ 
+
+"
+
+# ╔═╡ 1c054a3c-0282-4a32-aa67-981c19503694
+function volterra_lotka(x,p,t)
+    alpha, beta, gamma, delta = p  # Descomponer el vector de parámetros
+	x1,x2=x
+    dx1=(alpha * x1) - (beta * x1 * x2)  # Ecuación para la presa
+    dx2 = (delta * x1 * x2) - (gamma * x2)  # Ecuación para el depredador
+	return [dx1;dx2]
+end
+
+# ╔═╡ 8d3eb5f2-4d24-486f-93a5-6710a8d385dd
+md"
+Valores de los parámetros
+"
+
+# ╔═╡ 1897a3a7-578e-4ed1-98b7-f2532e8a743f
+begin
+	k1=-(beta*gamma)/delta
+	k2=(delta*alpha)/beta
+	A=[0 k1; k2 0]
+	autovalores,_=eigen(A)  #para esto necesito LinearAlgebra
+	md"""
+	k1= $(k1), k2= $(k2)
+	
+	autovalores= $(autovalores)"""
+end
+
+# ╔═╡ 6eed652a-3876-46ef-8f03-2c9dc6ee2fcb
+scatter(real(autovalores),imag(autovalores),
+	grid=true,legend=false, framestyle = :origin,
+	xaxis=[-2,2], yaxis=[-2,2] )
+
+# ╔═╡ 0b2775be-d7fb-11ea-0b82-0d2b4d544d31
+md"### Ejercicio 4
+
+El atractor de Lorenz está descrito por las ecuaciones:
+
+$$\dot{x_1}= \sigma (x_2 - x_1)$$
+$$\dot{x_2}= (r - x_3)x_1 - x_2 + u$$
+$$\dot{x_3}= x_1x_2 - bx_3$$
+"
+
+# ╔═╡ 905ebd45-3734-4c77-8dc3-2e99ca01e068
+begin
+	# Parámetros del sistema
+	sigma = 10
+	r4 = 28
+	b = 8 / 3
+	a = 0
+	md"""
+	
+	Parámetros del sistema"""
+end
+
+# ╔═╡ f8cc9600-d7f8-11ea-138d-5f40babd5dce
+begin
+	# Punto de equilibrio
+	x_eq = sqrt(b * (r4 - 1))
+	A4=[-sigma sigma 0; 1 -1 -x_eq; x_eq x_eq -b]
+	autovalores4,_=eigen(A4) 
+	md"""
+	Punto equilibrio = ($(x_eq), $(x_eq), $(r4-1))
+	Autovalores = $(autovalores4)"""
+end
+
+# ╔═╡ 86cc4ac0-d7fb-11ea-2101-4b12fafd41f7
+begin
+
+	# Definición del sistema de Lorenz
+	function lorenz!(du, u, p, t)
+	    du[1] = sigma * (u[2] - u[1])
+	    du[2] = (r4 - u[3]) * u[1] - u[2] + a
+	    du[3] = u[1] * u[2] - b * u[3]
+	end
+	
+	# Condiciones iniciales
+	initial_conditions = [
+	    [1.0, 1.0, 1.0],
+	    [10.0, 10.0, 10.0],
+	    [0.0, 0.0, 1.0],
+		[-1.0, -1.0, -1.0],
+	]
+	
+	# Soluciones del sistema
+	tspan = (0.0, 20.0)
+	solutions = []
+	
+	for u0 in initial_conditions
+	    prob = ODEProblem(lorenz!, u0, tspan)
+	    sol = solve(prob, Tsit5(), saveat=0.01)
+	    push!(solutions, sol)
+	end
+	
+	# Graficar las soluciones
+	plotly()
+	plots = []
+	
+	for (i, sol) in enumerate(solutions)
+	    p = plot(sol, idxs=(1,2,3), title="Atractor de Lorenz $i",
+	             xlabel="X1", ylabel="X2", zlabel="X3",
+	             label=false)
+	    push!(plots, p)
+	end
+	
+	plot(plots...)
+end
+
+# ╔═╡ 1790c760-0e0d-11eb-1c47-f5e902e158fb
+md" # Código diagramas de fase
+"
+
+# ╔═╡ f5ca89e0-0e0c-11eb-32a1-fb22511f42ae
+function flechas!(figura,f,p,rangos;N=10)
+	#modifica una figura añadiendo las flechas por eso tiene una exclamación !
+	# N es un parámetro opcional, si no se lo paso el valor es 10
+	# los otros son posicionales
+	xmin,xmax,ymin,ymax=rangos #desestructurar un iterable (explicar)
+	longitud=max(abs(xmax-xmin),abs(ymax-ymin))/N
+	
+    #hago una malla de x e ys y pongo las flechas en cada punto
+	x1s=xmin:((xmax-xmin)/N):xmax
+	x2s=ymin:((ymax-ymin)/N):ymax
+
+    #barrido para las flechas
+	X1=[];
+	X2=[];
+	U=[];
+	V=[];
+	for x1 in x1s #barrido para calcular las flechas
+		for x2 in x2s
+			push!(X1,x1); #Push añade un componente al final de un vector
+			push!(X2,x2);
+			F=f([x1,x2],p,0)
+			X=0.1*F/(0.1+sqrt(F[1]^2+F[2]^2)) #Saturo el tamaño de la flecha
+			push!(U,X[1]);
+			push!(V,X[2]);
+		end
+	end
+	#Pinta las flechas
+	quiver!(figura,X1,X2,quiver=(U,V), arrow=arrow(0.1*longitud, 0.1*longitud))
+	return figura  
+end
+
+# ╔═╡ 165464e2-0e0f-11eb-3851-3701a6c78502
+#= Es un euler modificado que integra hacia delante y hacia atrás
+    congtinúa integrando hasta que se sale o completa un número de pasos. 
+	   -hacia delante se detectan bien los PE y ciclos límite estables
+	   -Hacia atrás permite ver también los inestables
+	Ajusta dt para que el paso tenga un tamaño que sea aproximadamente constante=#
+
+function trayectoria(x0,f,p,rangos;N=10,pasosMax=100)
+	xmin,xmax,ymin,ymax=rangos
+	long=max(abs(xmax-xmin),abs(ymax-ymin))/N
+	x,y=x0
+	pasos=0
+	
+	X1=[x]
+	Y1=[y]
+	X2=[x] #parte de la trayectoria hacia atrás en el tiempo
+	Y2=[y]
+	
+	while (xmin<x<xmax) & (ymin<y<ymax) & (pasos<pasosMax)
+		derivada=f([x,y],p,0)
+		dt=0.05*long/(0.1+sqrt(derivada[1]^2+derivada[2]^2))
+		Xn=[x;y]+derivada*dt
+		x,y=Xn
+		pasos=pasos+1
+		push!(X1,x)
+		push!(Y1,y)
+	end
+	pasos=0
+	x,y=x0
+	while (xmin<x<xmax) & (ymin<y<ymax) & (pasos<pasosMax)
+		derivada=f([x,y],p,0)
+		dt=-0.05*long/(0.1+sqrt(derivada[1]^2+derivada[2]^2))
+		Xn=[x;y]+derivada*dt
+		x,y=Xn
+		pasos=pasos+1
+		push!(X2,x)
+		push!(Y2,y)
+	end
+	X=append!(reverse(X2),X1) #junto ambas partes
+	Y=append!(reverse(Y2),Y1)
+	return (X,Y)
+end
+
+# ╔═╡ 915aa560-0e0e-11eb-18d4-e3a899ee2c1c
+function trayectorias!(figura,f,p,rangos;N=10)
+	#modifica una figura añadiendo las trayectorias por eso tiene una exclamación !
+	#barrido para las soluciones
+	xmin,xmax,ymin,ymax=rangos
+	N=round(N/2);
+	x1s=xmin:((xmax-xmin)/N):xmax
+	x2s=ymin:((ymax-ymin)/N):ymax
+	T=10;
+	for x1 in x1s
+		for x2 in x2s 
+			X,Y=trayectoria([x1;x2],f,p,rangos,N=N,pasosMax=100)
+			figura=plot!(figura,X,Y,legend=false)
+		end
+	end 
+	return figura
+end
+
+# ╔═╡ 7115307e-d660-11ea-3f2f-4d4963a60e39
+function fases(f,p;rangos=[-1,1,-1,1],N=10)
+	xmin,xmax,ymin,ymax=rangos
+	x1s=xmin:((xmax-xmin)/N):xmax
+	x2s=ymin:((ymax-ymin)/N):ymax
+	
+	p1=plot()
+	
+	p1=flechas!(p1,f,p,rangos,N=N) #argumento opcional
+	p1=trayectorias!(p1,f,p,rangos,N=N)
+	
+	xlims!(p1,(xmin, xmax))
+	ylims!(p1,(ymin, ymax))
+	return p1 #si lo quisieseis usar fuera de pluto hay que usar display(figura)
+end
+
+# ╔═╡ 4e3f5abf-e04a-4ab1-a790-0826c563edac
+fases(volterra_lotka,[2.0,1.0,3.0,1.0],rangos=[0,3,0,3])
+
+# ╔═╡ Cell order:
+# ╠═455e0c30-d4d7-11ea-22ce-0d04b4e8d860
+# ╠═1c054a3c-0282-4a32-aa67-981c19503694
+# ╠═cdd5068c-741c-4bfb-9426-ff512118160b
+# ╠═254b4bc9-946f-4461-b061-2535f1a56cb5
+# ╠═d78bbe09-2d88-4643-b6ff-bd71cd561a0f
+# ╠═6eed652a-3876-46ef-8f03-2c9dc6ee2fcb
+# ╠═8d3eb5f2-4d24-486f-93a5-6710a8d385dd
+# ╠═1897a3a7-578e-4ed1-98b7-f2532e8a743f
+# ╠═4e3f5abf-e04a-4ab1-a790-0826c563edac
+# ╠═0b2775be-d7fb-11ea-0b82-0d2b4d544d31
+# ╠═905ebd45-3734-4c77-8dc3-2e99ca01e068
+# ╠═f8cc9600-d7f8-11ea-138d-5f40babd5dce
+# ╠═86cc4ac0-d7fb-11ea-2101-4b12fafd41f7
+# ╠═1790c760-0e0d-11eb-1c47-f5e902e158fb
+# ╠═f5ca89e0-0e0c-11eb-32a1-fb22511f42ae
+# ╠═165464e2-0e0f-11eb-3851-3701a6c78502
+# ╠═915aa560-0e0e-11eb-18d4-e3a899ee2c1c
+# ╠═7115307e-d660-11ea-3f2f-4d4963a60e39
